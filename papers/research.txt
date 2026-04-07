@@ -1,0 +1,82 @@
+IQRA'EVAL — RESEARCH PLAN OVERVIEW
+====================================
+
+Goal: Competitive submission to the next IqraEval shared task
+      (Qur'anic Mispronunciation Detection & Diagnosis)
+
+Hardware: 1x A100 40GB (burst to 2x)
+Backbones: wav2vec2-bert / XLS-R-1B AND whisper-large-v3 (ablate both)
+Framework: PyTorch + HuggingFace Transformers + s3prl (optional)
+
+
+EXECUTION ORDER
+===============
+
+  step1.md  — Environment setup, data download, project scaffold, eval script
+  step2.md  — Frozen SSL + CTC head (minimal working baseline)
+  step3.md  — Full fine-tuning, single stage (wav2vec2-xls-r + whisper-large-v3)
+  step4.md  — Multi-stage domain adaptation
+  step5.md  — Synthetic mispronunciation augmentation
+  step6.md  — Full solution: combine best findings + decoding + ensemble
+
+Each step is self-contained and builds on the previous one.
+Code from earlier steps is reused — later steps only add/modify.
+
+
+METRICS (from IqraEval evaluation protocol)
+============================================
+
+Primary:   F1-score (harmonic mean of Precision and Recall on mispronunciation detection)
+Secondary: Precision, Recall, Correct Rate, Accuracy
+Detail:    FRR (False Reject Rate), FAR (False Accept Rate), DER (Diagnosis Error Rate)
+Alignment: 3-way alignment of (canonical, verbatim, predicted) phoneme sequences
+
+
+REFERENCE SCORES (IqraEval 2025 leaderboard)
+=============================================
+
+  BAIC (winner)     F1=0.4726  Prec=0.3713  Rec=0.6501
+  Hafs2Vec (#2)     F1=0.4650  Prec=0.3292  Rec=0.7920
+  Baseline mHuBERT  F1=0.4414  Prec=0.3093  Rec=0.7707
+  Baseline WavLM    F1=0.4042  Prec=0.2715  Rec=0.7908
+
+
+ABLATION MATRIX (tracked across all steps)
+==========================================
+
+  Variable              Options
+  -----------           ----------------------------
+  Backbone              wav2vec2-base, xls-r-300m, xls-r-1b, wav2vec2-bert, whisper-large-v3
+  Encoder freezing      frozen / unfrozen
+  Head                  linear, BiLSTM-2layer, shallow-transformer
+  Training stage        single / 2-stage / 3-stage
+  Extra data            none / TTS-correct / TTS-errors / EveryAyah
+  Decoding              greedy CTC / beam search (width 5,10)
+  Augmentation          none / SpecAugment / synthetic-errors
+
+
+DIRECTORY STRUCTURE (target)
+============================
+
+  iqra/
+  ├── research.txt          ← this file
+  ├── plan.txt              ← original brainstorm (archived)
+  ├── plans/
+  │   ├── step1.md
+  │   ├── step2.md
+  │   ├── step3.md
+  │   ├── step4.md
+  │   ├── step5.md
+  │   └── step6.md
+  ├── papers/
+  │   └── iqraeval.txt
+  ├── src/
+  │   ├── data/             ← dataset loading, phonemizer, preprocessing
+  │   ├── models/           ← model definitions
+  │   ├── training/         ← training loops, configs
+  │   ├── evaluation/       ← official eval metrics
+  │   └── utils/            ← alignment, decoding, logging
+  ├── configs/              ← yaml/json training configs
+  ├── scripts/              ← shell scripts for training runs
+  ├── notebooks/            ← EDA, result analysis
+  └── outputs/              ← checkpoints, logs, predictions
