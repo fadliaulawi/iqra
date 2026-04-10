@@ -28,7 +28,7 @@ Details:
 
 ## 2.2 — Training Configuration
 
-Create `configs/step2_frozen_baseline.yaml`:
+Create `configs/step2_frozen_xls_r_300m.yaml` (default baseline):
 
 ```yaml
 # --- Model ---
@@ -66,7 +66,7 @@ patience: 5  # early stopping
 decoding: "greedy"  # greedy CTC decoding for now
 
 # --- Output ---
-output_dir: "outputs/step2_frozen_xls-r-300m"
+output_dir: "outputs/step2_frozen_xls_r_300m"
 ```
 
 ## 2.3 — Training Script
@@ -133,7 +133,11 @@ src/models/ctc_model.py
 src/training/train.py
 src/training/predict.py
 src/utils/decoding.py
-configs/step2_frozen_baseline.yaml
+configs/step2_frozen_xls_r_300m.yaml
+configs/step2_frozen_xls_r_1b.yaml
+configs/step2_frozen_wav2vec2_large_xlsr_53.yaml
+configs/step2_frozen_wavlm_large.yaml
+configs/step2_frozen_mms_1b_all.yaml
 outputs/step2_*/                    ← checkpoints + logs per run
 results/step2_ablation.csv          ← encoder comparison table
 ```

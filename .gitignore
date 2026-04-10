@@ -1,4 +1,6 @@
 data/
 s3prl/
+logs/
+outputs/
 
 __pycache__/

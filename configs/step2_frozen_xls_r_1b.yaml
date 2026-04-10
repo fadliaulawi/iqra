@@ -1,0 +1,26 @@
+# Frozen encoder + CTC head — XLS-R 1B (~1B params).
+# Use on A100 40GB: small batch + encoder gradient checkpointing.
+encoder_name: "facebook/wav2vec2-xls-r-1b"
+vocab_path: "data/phoneme_vocab.json"
+
+train_csv: "data/raw/train/metadata.csv"
+val_csv: "data/raw/dev/metadata.csv"
+
+batch_size: 2
+num_workers: 2
+max_audio_len_sec: 15.0
+
+gradient_checkpointing: true
+
+head_hidden: 1024
+head_layers: 2
+head_dropout: 0.1
+
+learning_rate: 2.0e-4
+weight_decay: 0.01
+max_grad_norm: 5.0
+max_epochs: 20
+patience: 5
+log_every_steps: 50
+
+output_dir: "outputs/step2_frozen_xls_r_1b"
