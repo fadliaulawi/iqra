@@ -1,10 +1,11 @@
-"""Frozen SSL encoder + CTC head baseline."""
+"""SSL encoder + CTC head model (frozen or full fine-tuning)."""
 
 from typing import Optional
 
 import torch
 import torch.nn as nn
 from transformers import AutoModel, Wav2Vec2ForCTC
+from src.data.augmentation import apply_specaugment
 
 
 class LayerWeightedSum(nn.Module):
@@ -32,6 +33,8 @@ class FrozenSSLCTC(nn.Module):
         head_dropout: float = 0.1,
         gradient_checkpointing: bool = False,
         mms_target_lang: Optional[str] = None,
+        freeze_encoder: bool = True,
+        specaugment: bool = False,
     ):
         super().__init__()
         self.blank_id = blank_id
@@ -49,8 +52,11 @@ class FrozenSSLCTC(nn.Module):
         else:
             self.encoder = AutoModel.from_pretrained(encoder_name)
 
+        self.freeze_encoder = freeze_encoder
+        self.use_specaugment = specaugment
+
         for p in self.encoder.parameters():
-            p.requires_grad = False
+            p.requires_grad = not self.freeze_encoder
 
         if gradient_checkpointing and hasattr(self.encoder, "gradient_checkpointing_enable"):
             self.encoder.gradient_checkpointing_enable()
@@ -94,6 +100,8 @@ class FrozenSSLCTC(nn.Module):
             output_hidden_states=True,
         )
         rep = self.layer_sum(enc_out.hidden_states)
+        if self.training and self.use_specaugment:
+            rep = apply_specaugment(rep)
         rep, _ = self.head(rep)
         logits = self.classifier(rep)  # (B, T', V)
         out_len = self._feat_lengths(audio_len, logits.size(1))

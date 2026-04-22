@@ -91,6 +91,14 @@ gradient_checkpointing: true
 output_dir: "outputs/step3_finetune_whisper-large-v3"
 ```
 
+## 3.3b — MMS 1B ASR (research-only)
+
+For `facebook/mms-1b-all`, use `mms_target_lang` (ISO 639-3, e.g. `ara`) and full fine-tuning:
+
+- `configs/step3_finetune_mms_1b_all.yaml`
+
+Note: the hub license is **CC-BY-NC 4.0** — OK for research, not for commercial products without separate permission.
+
 ## 3.4 — SpecAugment
 
 Add SpecAugment during training (standard regularization for speech):
@@ -127,8 +135,9 @@ Update `src/training/train.py`:
 ```
 src/models/whisper_phoneme.py
 src/data/augmentation.py
-configs/step3_finetune_xls-r.yaml
-configs/step3_finetune_whisper.yaml
+configs/step3_finetune_xls_r_1b.yaml
+configs/step3_finetune_whisper_large_v3.yaml
+configs/step3_finetune_mms_1b_all.yaml
 outputs/step3_*/
 results/step3_ablation.csv
 ```
