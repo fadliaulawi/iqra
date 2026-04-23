@@ -72,7 +72,22 @@ def main():
     p.add_argument(
         "--resume",
         default=None,
-        help="Path to checkpoint (.pt) with model/optimizer/epoch; continues from epoch+1 until max_epochs in config."
+        help="Path to checkpoint (.pt). Restores full training state unless --reset-optimizer is used.",
+    )
+    p.add_argument(
+        "--resume-from",
+        default=None,
+        help="Alias of --resume (useful for multi-stage scripts).",
+    )
+    p.add_argument(
+        "--stage",
+        default=None,
+        help="Optional stage label for logging (e.g., S1, S2, S3).",
+    )
+    p.add_argument(
+        "--reset-optimizer",
+        action="store_true",
+        help="Load model weights from resume checkpoint but start a fresh optimizer/scheduler/scaler state.",
     )
     args = p.parse_args()
 
@@ -85,6 +100,8 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     print(f"Using config: {args.config}")
+    if args.stage:
+        print(f"Stage: {args.stage}")
 
     vocab = load_vocab(cfg["vocab_path"])
     blank_id = int(vocab["<blank>"])
@@ -168,7 +185,7 @@ def main():
     use_fp16 = bool(cfg.get("fp16", False)) and device.type == "cuda"
     scaler = torch.cuda.amp.GradScaler(enabled=use_fp16)
 
-    resume_path = args.resume or cfg.get("resume_from")
+    resume_path = args.resume_from or args.resume or cfg.get("resume_from")
     start_epoch = 0
     writer = SummaryWriter(log_dir=str(output_dir / "tb"))
     best_per = 1e9
@@ -185,32 +202,38 @@ def main():
         except TypeError:
             ckpt = torch.load(ckpt_path, map_location=device)
         model.load_state_dict(ckpt["model"], strict=True)
-        optim.load_state_dict(ckpt["optimizer"])
-        start_epoch = int(ckpt.get("epoch", 0))
-        global_step = int(ckpt.get("global_step", 0))
-        if "best_per" in ckpt:
-            best_per = float(ckpt["best_per"])
-        else:
-            sidecar = output_dir / "best_metrics.json"
-            if sidecar.is_file():
-                with open(sidecar, encoding="utf-8") as f:
-                    best_per = float(json.load(f)["PER"])
-            else:
-                best_per = float(ckpt.get("metrics", {}).get("PER", 1e9))
-                print("Warning: legacy checkpoint without best_per; approximated best PER from saved metrics.")
-        bad_epochs = int(ckpt.get("bad_epochs", 0))
-        if "scheduler" in ckpt:
-            scheduler.load_state_dict(ckpt["scheduler"])
-        else:
+        if args.reset_optimizer:
             print(
-                "Warning: checkpoint has no scheduler state; LR schedule restarts from current optimizer step. "
-                "Prefer resuming from checkpoints saved after this trainer update."
+                f"Loaded weights from {ckpt_path}; starting fresh optimizer/scheduler state "
+                f"(stage transfer mode)."
             )
-        if use_fp16 and "scaler" in ckpt:
-            scaler.load_state_dict(ckpt["scaler"])
-        print(
-            f"Resumed from {ckpt_path} (completed epoch {start_epoch}, global_step={global_step}, best_per={best_per:.4f})"
-        )
+        else:
+            optim.load_state_dict(ckpt["optimizer"])
+            start_epoch = int(ckpt.get("epoch", 0))
+            global_step = int(ckpt.get("global_step", 0))
+            if "best_per" in ckpt:
+                best_per = float(ckpt["best_per"])
+            else:
+                sidecar = output_dir / "best_metrics.json"
+                if sidecar.is_file():
+                    with open(sidecar, encoding="utf-8") as f:
+                        best_per = float(json.load(f)["PER"])
+                else:
+                    best_per = float(ckpt.get("metrics", {}).get("PER", 1e9))
+                    print("Warning: legacy checkpoint without best_per; approximated best PER from saved metrics.")
+            bad_epochs = int(ckpt.get("bad_epochs", 0))
+            if "scheduler" in ckpt:
+                scheduler.load_state_dict(ckpt["scheduler"])
+            else:
+                print(
+                    "Warning: checkpoint has no scheduler state; LR schedule restarts from current optimizer step. "
+                    "Prefer resuming from checkpoints saved after this trainer update."
+                )
+            if use_fp16 and "scaler" in ckpt:
+                scaler.load_state_dict(ckpt["scaler"])
+            print(
+                f"Resumed from {ckpt_path} (completed epoch {start_epoch}, global_step={global_step}, best_per={best_per:.4f})"
+            )
 
     max_epochs = int(cfg["max_epochs"])
     if start_epoch >= max_epochs:
