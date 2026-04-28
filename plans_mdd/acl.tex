@@ -1,0 +1,299 @@
+\documentclass[11pt]{article}
+
+% Change "review" to "final" to generate the final (sometimes called camera-ready) version.
+% Change to "preprint" to generate a non-anonymous version with page numbers.
+\usepackage[review]{acl}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage{amsmath}
+
+% For proper rendering and hyphenation of words containing Latin characters (including in bib files)
+\usepackage[T1]{fontenc}
+% For Vietnamese characters
+% \usepackage[T5]{fontenc}
+% See https://www.latex-project.org/help/documentation/encguide.pdf for other character sets
+
+% This assumes your files are encoded as UTF8
+\usepackage[utf8]{inputenc}
+
+% This is not strictly necessary, and may be commented out,
+% but it will improve the layout of the manuscript,
+% and will typically save some space.
+\usepackage{microtype}
+
+% This is also not strictly necessary, and may be commented out.
+% However, it will improve the aesthetics of text in
+% the typewriter font.
+\usepackage{inconsolata}
+
+%Including images in your LaTeX document requires adding
+%additional package(s)
+\usepackage{graphicx}
+
+% If the title and author information does not fit in the area allocated, uncomment the following
+%
+%\setlength\titlebox{<dim>}
+%
+% and set <dim> to something 5cm or larger.
+
+\title{Retrieval-Based Phoneme Mispronunciation Detection for Quranic Recitation}
+
+% Author information can be set in various styles:
+% For several authors from the same institution:
+% \author{Author 1 \and ... \and Author n \\
+%         Address line \\ ... \\ Address line}
+% if the names do not fit well on one line use
+%         Author 1 \\ {\bf Author 2} \\ ... \\ {\bf Author n} \\
+% For authors from different institutions:
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \And  ... \And
+%         Author n \\ Address line \\ ... \\ Address line}
+% To start a separate ``row'' of authors use \AND, as in
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \AND
+%         Author 2 \\ Address line \\ ... \\ Address line \And
+%         Author 3 \\ Address line \\ ... \\ Address line}
+
+\author{Anonymous ACL submission}
+
+%\author{
+%  \textbf{First Author\textsuperscript{1}},
+%  \textbf{Second Author\textsuperscript{1,2}},
+%  \textbf{Third T. Author\textsuperscript{1}},
+%  \textbf{Fourth Author\textsuperscript{1}},
+%\\
+%  \textbf{Fifth Author\textsuperscript{1,2}},
+%  \textbf{Sixth Author\textsuperscript{1}},
+%  \textbf{Seventh Author\textsuperscript{1}},
+%  \textbf{Eighth Author \textsuperscript{1,2,3,4}},
+%\\
+%  \textbf{Ninth Author\textsuperscript{1}},
+%  \textbf{Tenth Author\textsuperscript{1}},
+%  \textbf{Eleventh E. Author\textsuperscript{1,2,3,4,5}},
+%  \textbf{Twelfth Author\textsuperscript{1}},
+%\\
+%  \textbf{Thirteenth Author\textsuperscript{3}},
+%  \textbf{Fourteenth F. Author\textsuperscript{2,4}},
+%  \textbf{Fifteenth Author\textsuperscript{1}},
+%  \textbf{Sixteenth Author\textsuperscript{1}},
+%\\
+%  \textbf{Seventeenth S. Author\textsuperscript{4,5}},
+%  \textbf{Eighteenth Author\textsuperscript{3,4}},
+%  \textbf{Nineteenth N. Author\textsuperscript{2,5}},
+%  \textbf{Twentieth Author\textsuperscript{1}}
+%\\
+%\\
+%  \textsuperscript{1}Affiliation 1,
+%  \textsuperscript{2}Affiliation 2,
+%  \textsuperscript{3}Affiliation 3,
+%  \textsuperscript{4}Affiliation 4,
+%  \textsuperscript{5}Affiliation 5
+%\\
+%  \small{
+%    \textbf{Correspondence:} \href{mailto:email@domain}{email@domain}
+%  }
+%}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+We present a retrieval-based mispronunciation detection and diagnosis (MDD) pipeline for Quranic recitation at phoneme resolution.
+Instead of directly classifying each phoneme segment, we retrieve nearest canonical examples from a correct-pronunciation memory bank and use top-$k$ voting for correctness and diagnosis. As an additive lightweight training component, we also tune pair-specific vote weights for (target phoneme, retrieved neighbor label) relations, so the decision layer can be calibrated without retraining the acoustic encoder.
+We unify the three IqraEval training sources, form development splits with a correct-only memory bank, align audio to target phonemes, embed segments with a pretrained speech encoder, and run scalable nearest-neighbor retrieval over the bank.
+On our unified development set, the bank contains on the order of $3.2$ million segment vectors and the query set about $4.6\times 10^5$ segments; the best setting we report here reaches 90.30\% agreement with derived phoneme-level labels at $k{=}10$.
+\end{abstract}
+
+\section{Introduction}
+Phoneme-level mispronunciation detection and diagnosis (MDD) is important for Quranic recitation feedback systems, where users need not only correctness scores but also actionable diagnosis of what was spoken instead of the expected target \citep{neri-etal-2008-capt,rogerson-revell-2021-capt,li-etal-2016-mdd,leung-etal-2019-cnn-rnn-ctc}.
+Many existing MDD pipelines are classifier-centric and may provide limited interpretability at decision time \citep{li-etal-2016-mdd,leung-etal-2019-cnn-rnn-ctc,tu-etal-2025-per-mdd}.
+In contrast, retrieval-based MDD grounds every decision in explicit nearest examples from a canonical pronunciation memory bank \citep{tu-etal-2025-per-mdd,mittal-etal-2025-recast,siskos-etal-2025-rag-asr}.
+
+Recent community efforts have made Arabic MDD for Quranic/MSA recitation far more measurable.
+The IqraEval 2025 shared task introduced the first open benchmark for Quranic pronunciation assessment, with the QuranMB test set, auxiliary training resources, and a public leaderboard framed as phoneme sequence prediction \citep{el-kheir-etal-2025-iqraeval}.
+The follow-up IQRA 2026 Interspeech challenge expanded the setting with additional authentic mispronounced speech (Iqra Extra IS26), an updated QuranMB.v2 benchmark, and a large participation pool with various systems submitted that gains performance in F1 over the first edition \citep{el-kheir-etal-2026-iqra-interspeech}.
+
+Despite this progress, much of the published challenge line still centers on large-scale training and comparatively heavy inference: end-to-end CTC or generative modeling, curriculum and multi-checkpoint fusion, and language-model rescoring at scale \citep{el-kheir-etal-2026-iqra-interspeech}.
+Complementary directions that avoid training a full sequence model from scratch, and that keep a small, inspectable decision surface, are only beginning to receive attention \citep{tu-etal-2025-per-mdd,siskos-etal-2025-rag-asr,mittal-etal-2025-recast,muralidhar-jayanthi-etal-2023-retrieve-copy,tong-etal-2023-slot-triggered,mathur-etal-2024-doc-rag,xiao-etal-2025-contextual-asr-rag-llm}.
+Retrieval-based MDD is one such family: it indexes canonical phoneme segments with a (typically frozen) speech encoder and decides correctness and diagnosis from neighborhood structure, which yields explicit evidence and sidesteps retraining a full recognizer for every design iteration \citep{tu-etal-2025-per-mdd,siskos-etal-2025-rag-asr,mittal-etal-2025-recast}.
+
+In this work, we develop a complete retrieval-based MDD system.
+Given an utterance and its canonical target phoneme sequence, the system predicts, for each target index, whether the realization is correct and, if not, which phoneme the realization most resembles.
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\textwidth]{arch.png}
+  \caption{General pipeline of the proposed retrieval-based MDD framework: embedding extraction from speech, canonical bank indexing, top-$k$ retrieval for each query segment, and prediction with optional rule tuning.}
+  \label{fig:arch}
+\end{figure*}
+
+We summarize our contributions as follows:
+\begin{itemize}
+  \item a unified training mixture and bank/dev split strategy tailored to retrieval;
+  \item a phoneme-level retrieval and majority-vote framework with a scalable neighbor search stage;
+  \item an additional lightweight pair-weight tuning mechanism that calibrates neighbor votes at the phoneme-pair level;
+  \item development results and an error analysis for several values of~$k$.
+\end{itemize}
+
+\section{Related Work}
+
+Prior work in MDD for resource-rich languages (e.g., English and Mandarin) has established strong GOP, DNN/CTC, and sequence-recognition baselines \citep{li-etal-2016-mdd,leung-etal-2019-cnn-rnn-ctc,neri-etal-2008-capt,rogerson-revell-2021-capt}; Arabic Quranic MDD in the open benchmark setting is more recent but now has clear shared protocols \citep{el-kheir-etal-2025-iqraeval,el-kheir-etal-2026-iqra-interspeech}.
+The two IqraEval challenge reports describe a phoneme-recognition framing with TA/TR/FR/FA and diagnosis terms, a dedicated MSA-style phoneme inventory, and leaderboards on QuranMB (v1 in the first edition, v2 in the second).
+
+The first campaign (IqraEval 2025) established the first open benchmark/leaderboard for Quranic/MSA-style MDD and featured diverse SSL fine-tuning variants over the official data \citep{el-kheir-etal-2025-iqraeval}. Representative systems include Whisper-large-v3 with tokenizer/label adaptation (ANLPers), wav2vec2-BERT with task-adaptive pretraining (BAIC), XLS-R-1B fine-tuning with Quranic data (Hafs2Vec), multi-stage domain adaptation with Wav2Vec2 (Metapseud), and a lightweight transformer over wav2vec2 features (MONADA) \citep{qandos-etal-2025-anlpers,mattar-etal-2025-baic,ibrahim-2025-hafs2vec,mansour-2025-metapseud,daoud-messaoud-2025-monada}. Overall best F1 was around 0.47, and the major gap highlighted for follow-up work was the lack of authentic human mispronunciation training data \citep{el-kheir-etal-2025-iqraeval,el-kheir-etal-2026-iqra-interspeech}.
+
+The follow-up IQRA 2026 campaign scales this paradigm with Iqra Extra IS26 and stronger modeling; the baseline is F1$=0.44$, while top systems cluster near 0.72 \citep{el-kheir-etal-2026-iqra-interspeech}. The leading submissions (\textit{whu-iasp}, \textit{UTokyo}, \textit{RAM}) combine strong SSL encoders with enhanced temporal modeling, curriculum/domain adaptation, and decoding refinements; \textit{SQZ\,ww}, \textit{Najva}, and \textit{Kalimat} remain competitive with Conformer, FastConformer, and generative LALM-style variants respectively \citep{el-kheir-etal-2026-iqra-interspeech}. This reinforces the dominant heavy-training trend and motivates lighter alternatives.
+
+Retrieval has long been a natural tool when evidence must be human-inspectable. In speech and contextual ASR, recent work uses embedding retrieval for personalization/context discovery and keyword biasing, including retrieve-and-copy catalogs, slot-triggered contextual biasing, DOC-RAG, retrieval-augmented LLM contexting, and decoder-state retrieval (RECAST) \citep{muralidhar-jayanthi-etal-2023-retrieve-copy,tong-etal-2023-slot-triggered,mathur-etal-2024-doc-rag,xiao-etal-2025-contextual-asr-rag-llm,siskos-etal-2025-rag-asr,mittal-etal-2025-recast}. Retrieval-based MDD has also been shown as a training-free direction in recent work \citep{tu-etal-2025-per-mdd}. We follow that retrieval perspective for phoneme-level Quranic/MSA MDD, combining target-conditioned alignment, self-supervised segment representations, top-$k$ neighborhood voting, and a lightweight pair-weight tuning mechanism for vote calibration.
+
+\section{Methodology}
+Figure~\ref{fig:arch} summarizes the overall flow: speech is mapped into phoneme-level embeddings, a canonical bank is indexed, query embeddings retrieve nearest examples, and the final prediction is produced by voting with an optional rule-tuning layer.
+
+
+\subsection{Dataset}
+We use the IqraEval resources as our main data source \citep{el-kheir-etal-2025-iqraeval,el-kheir-etal-2026-iqra-interspeech}. For model development, we construct a unified corpus from Iqra train, Iqra TTS, and Iqra Extra IS26, then split it into train and development partitions (90/10, utterance-level, fixed seed). For external benchmark reference, we report the official QuranMB.v2 test set statistics from the challenge documentation.
+
+\begin{table}[t]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{lrrr}
+    \hline
+    Split & Utts. & Correct & Incorrect \\
+    \hline
+    Train & 117{,}610 & 92{,}009 & 25{,}601 \\
+    Dev & 13{,}068 & 10{,}195 & 2{,}873 \\
+    Test (QuranMB.v2) & 1{,}643 & -- & -- \\
+    \hline
+  \end{tabular}
+  \caption{Dataset statistics used in this work. Train/dev are our unified splits; QuranMB.v2 test figures follow the IQRA 2026 challenge report \citep{el-kheir-etal-2026-iqra-interspeech}.}
+  \label{tab:dataset-stats}
+\end{table}
+
+\subsection{Bank Formulation}
+The memory bank is designed to represent canonical pronunciation. After constructing train/dev partitions, we keep only correctly pronounced training utterances in the bank pool. Each utterance is aligned to the target phoneme sequence, producing one time span per target index. We then segment the waveform accordingly and encode each segment into a fixed-dimensional embedding vector. This yields a bank of labeled phoneme embeddings (canonical label + vector) that is used during inference.
+
+\subsection{Retrieval}
+Given a query utterance, we apply the same alignment and embedding extraction, then perform nearest-neighbor search in the bank using cosine-equivalent inner-product similarity over normalized vectors. For each query segment, we retrieve top-$k$ neighbors and aggregate their labels. We evaluate multiple $k$ settings ($k\in\{4,8,16,32\}$) and convert neighborhood agreement into phoneme-level detection and diagnosis predictions.
+
+\subsection{Rule Tuning}
+Beyond plain majority voting, we add a lightweight pair-weight tuning layer. Let \(e\) be the expected phoneme for a query segment, and let \(\{y_i\}_{i=1}^k\) be the labels of its top-\(k\) retrieved neighbors. We define a pair-specific weight \(w_{e,y}>0\), and compute weighted voting scores
+\begin{equation}
+\begin{aligned}
+S(c \mid e) &= \sum_{i=1}^{k} w_{e,y_i}\,\mathbf{1}[y_i=c],\\
+\hat{y} &= \arg\max_{c} S(c \mid e).
+\end{aligned}
+\end{equation}
+Here \(\hat{y}\) is the tuned vote output (used for accept/reject and diagnosis).
+
+To update \(w_{e,y}\), we run epoch-wise training updates on the train split and count false-reject pair occurrences:
+\begin{equation}
+C_{e,y}^{\mathrm{FR},(t)}
+=\#\{q\in \mathrm{Train}: e_q=e,\ \hat{y}_q=y,\ q\in \mathrm{FR}\}.
+\end{equation}
+Each pair weight is then linearly down-weighted in proportion to its FR count:
+\begin{equation}
+w_{e,y}^{(t+1)}=\max\!\left(w_{\min},\ w_{e,y}^{(t)}-\alpha\,C_{e,y}^{\mathrm{FR},(t)}\right),
+\end{equation}
+where \(\alpha\) is the update step and \(w_{\min}\) is a floor. Thus, only pairs associated with train false rejects are penalized, and no explicit up-weighting term is applied. This optimization acts only on vote-layer parameters and does not retrain the acoustic encoder.
+
+\begin{table*}[t]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{lcccc|cccc|c}
+    \hline
+    & \multicolumn{4}{c|}{Base retrieval} & \multicolumn{4}{c|}{Retrieval + rule tuning} &  \\
+    Metric & $k{=}4$ & $k{=}8$ & $k{=}16$ & $k{=}32$ & $k{=}4$ & $k{=}8$ & $k{=}16$ & $k{=}32$ & Baseline \\
+    \hline
+    F1 & 37.50 & 38.46 & 38.85 & 38.60 & 41.75 & 42.77 & 42.92 & \textbf{42.94} & 44.14 \\
+    Precision & 26.24 & 27.13 & 27.42 & 27.21 & 32.68 & 35.58 & \textbf{38.23} & 37.95 & 30.39 \\
+    Recall & 65.70 & 66.03 & \textbf{66.60} & 66.39 & 57.80 & 53.59 & 48.94 & 49.45 & 77.07 \\
+    Correct Rate & 86.17 & 86.66 & 86.77 & 86.67 & 89.82 & 90.94 & \textbf{91.78} & 91.71 & 83.85 \\
+    TA (\%) & 82.03 & 82.49 & 82.56 & 82.48 & 86.17 & 87.56 & \textbf{88.69} & 88.58 & 87.63 \\
+    FR (\%) & 11.66 & 11.20 & 11.13 & 11.21 & 7.52 & 6.13 & \textbf{4.99} & 5.10 & 12.37 \\
+    FA (\%) & 2.17 & 2.14 & \textbf{2.11} & 2.12 & 2.66 & 2.93 & 3.22 & 3.19 & 22.93 \\
+    % CD & 1{,}035 & 1{,}064 & 1{,}078 & \textbf{1{,}085} & 872 & 813 & 736 & 779 & 61.20$^\ddagger$ \\
+    PER$^{\dagger}$ & 0.138 & 0.133 & 0.132 & 0.133 & 0.102 & 0.091 & \textbf{0.082} & 0.083 & 0.1308 \\
+    \hline
+  \end{tabular}
+  \caption{Test-set performance for base retrieval and retrieval with rule tuning, plus the organizer baseline from IqraEval'26. $^{\dagger}$PER is reported as a fraction.}
+  \label{tab:retrieval-k}
+\end{table*}
+
+\begin{table}[t]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{lrrrr}
+    \hline
+    Pair \((e\!\rightarrow\!\hat{y})\) & Base & Tuned & \(\Delta\) & Red.(\%) \\
+    \hline
+    \(a\!\rightarrow\!aa\) & 330 & 57 & 273 & 82.7 \\
+    \(aa\!\rightarrow\!a\) & 342 & 164 & 178 & 52.0 \\
+    \(u\!\rightarrow\!a\) & 237 & 107 & 130 & 54.9 \\
+    \(i\!\rightarrow\!a\) & 173 & 47 & 126 & 72.8 \\
+    \(u\!\rightarrow\!uu\) & 133 & 19 & 114 & 85.7 \\
+    \(i\!\rightarrow\!ii\) & 135 & 25 & 110 & 81.5 \\
+    \(a\!\rightarrow\!u\) & 146 & 39 & 107 & 73.3 \\
+    \(a\!\rightarrow\!i\) & 142 & 57 & 85 & 59.9 \\
+    \(ii\!\rightarrow\!i\) & 126 & 44 & 82 & 65.1 \\
+    \(uu\!\rightarrow\!u\) & 86 & 20 & 66 & 76.7 \\
+    \hline
+  \end{tabular}
+  \caption{Largest absolute FR-pair reductions at $k{=}16$ on test. \(\Delta\!=\!\text{base}-\text{tuned}\).}
+  \label{tab:pair-fr-reduction-k16}
+\end{table}
+
+\subsection{Evaluation}
+We evaluate phoneme-level MDD with the confusion components \(\mathrm{TA}\), \(\mathrm{TR}\), \(\mathrm{FR}\), and \(\mathrm{FA}\), and report the metrics requested in this work: F1, Precision, Recall, Correct Rate, TA/FR/FA rates and PER.
+
+Detection metrics are computed as:
+\begin{equation}
+\mathrm{Precision} = \frac{\mathrm{TR}}{\mathrm{TR}+\mathrm{FR}}, \quad
+\mathrm{Recall} = \frac{\mathrm{TR}}{\mathrm{TR}+\mathrm{FA}},
+\end{equation}
+\begin{equation}
+\mathrm{F1} = \frac{2 \cdot \mathrm{Precision} \cdot \mathrm{Recall}}{\mathrm{Precision}+\mathrm{Recall}}.
+\end{equation}
+
+Let \(N=\mathrm{TA}+\mathrm{TR}+\mathrm{FR}+\mathrm{FA}\). We report:
+\begin{equation}
+\mathrm{Cor.\ Rate} = \frac{\mathrm{TA}+\mathrm{TR}}{N}, \quad
+\mathrm{PER} = 1-\mathrm{Cor.\ Rate}.
+\end{equation}
+
+\section{Results}
+
+We report test-set results for both the base retrieval model and the retrieval model with rule tuning. All runs use the same bank/query embeddings and differ only in top-$k$ voting configuration and whether pair-wise vote calibration is enabled.
+
+The choice of $k$ is important because it controls the locality-stability tradeoff in nearest-neighbor voting: smaller $k$ is more local but noisier, while larger $k$ is more stable but can over-smooth toward dominant classes. In Table~\ref{tab:retrieval-k}, the base model improves from $k{=}4$ to $k{=}16$ on F1, Precision, Recall, and Correct Rate, while $k{=}32$ yields a slight plateau, indicating that the useful neighborhood scale is around moderate $k$ in this setup.
+
+Rule tuning improves overall detection quality over the base model across all tested $k$: F1 rises from 37.50 to 41.75 ($k{=}4$), 38.46 to 42.77 ($k{=}8$), 38.85 to 42.92 ($k{=}16$), and 38.60 to 42.94 ($k{=}32$), with corresponding Correct Rate gains as well. The main effect is a consistent FR reduction (11.66\%$\rightarrow$7.52\%, 11.20\%$\rightarrow$6.13\%, 11.13\%$\rightarrow$4.99\%, 11.21\%$\rightarrow$5.10\%), though this comes with lower recall, indicating a precision-oriented calibration trade-off. This confirms that pair-wise rule adjustment is impactful, but its operating point should still be tuned for the target balance between detection and diagnosis.
+
+To inspect \emph{where} rule tuning helps, we compare false-rejection pair counts between base and tuned runs. Table \ref{tab:pair-fr-reduction-k16} stores, for each pair \((e,\hat{y})\), the base count, tuned count, absolute reduction, and percent reduction.
+
+Across all listed pairs, FR mass drops from 5{,}910 to 2{,}652 (net reduction 3{,}258; \(\approx 55.1\%\)).
+Most gain concentrates in a small set of high-frequency vowel confusions, especially short/long alternations and cross-vowel swaps.
+Table~\ref{tab:pair-fr-reduction-k16} reports the largest absolute reductions.
+We also observe a small tail of regressions (76 pairs with negative reduction; total \(-90\) counts), typically very low-frequency pairs.
+
+Beyond aggregate scores, this retrieval-based pipeline improves interpretability: each decision can be traced to explicit nearest canonical phoneme examples and their vote contributions, making it easier to explain \emph{what} is wrong in a recitation and \emph{why}, compared with opaque end-to-end black-box training models.
+
+\section*{Limitations}
+
+Per-position targets are derived from global alignment between reference and realized phone strings rather than hand-validated phone boundaries, so some label noise is unavoidable. In addition, our decision layer remains relatively simple (majority vote plus pair-wise reweighting), which does not fully model class priors, confidence margins, or richer phoneme confusability structure.
+
+We will extend evaluation to stronger alignment and embedding backbones under the same protocol, and broaden the search over neighborhood and calibration strategies beyond $k{\in}\{4,8,16,32\}$. We also plan to combine this interpretable retrieval evidence with lightweight discriminative reranking to improve recall while preserving transparent error diagnosis.
+
+\section*{Acknowledgments}
+
+We thank the maintainers of the IqraEval resources and the broader open speech-software ecosystem.
+
+% Bibliography entries for the entire Anthology, followed by custom entries
+%\bibliography{anthology,custom}
+% Custom bibliography entries only
+\bibliography{custom}
+
+\end{document}

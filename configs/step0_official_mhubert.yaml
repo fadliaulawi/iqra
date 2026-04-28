@@ -1,8 +1,0 @@
-# Step 0 (official artifact track): run released Iqra mHuBERT baseline checkpoint.
-# This follows the organizer artifact path (.ckpt + vocab) instead of HF AutoModel training.
-ckpt: "https://huggingface.co/IqraEval/Iqra_mhubert_base/resolve/main/mhubert.ckpt"
-dict_path: "s3prl/interspeech_IqraEval/vocab/sws_arabic.txt"
-
-input_csv: "data/raw/test/metadata.csv"
-truth_csv: "data/raw/test_gt/ground_truth.csv"
-output_csv: "outputs/step0_official_mhubert/predictions.csv"

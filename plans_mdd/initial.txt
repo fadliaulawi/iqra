@@ -1,0 +1,288 @@
+Goal
+
+For each phoneme in the verse:
+
+get the expected phoneme
+extract the corresponding audio segment
+compare it to a database of correct phoneme examples
+decide:
+correct
+wrong
+if wrong, what it sounds like instead
+Step-by-step plan
+Step 1: Prepare the canonical target phoneme
+
+For each row in IqraEval:
+
+take the verse text
+generate or use the correct canonical phoneme sequence
+
+You need this because retrieval is always relative to the expected phoneme.
+
+So for each sample you should have:
+
+audio
+sentence or tashkeel
+target_phoneme_sequence
+Step 2: Build a database of correct phoneme examples
+
+Create a memory bank from correct speech only.
+
+For each training utterance that is assumed correct:
+
+align audio to target phoneme sequence
+cut the audio into phoneme-level segments
+save each segment with its phoneme label
+
+Store entries like:
+
+{
+  "phoneme": "SS",
+  "audio_segment": ...,
+  "embedding": ...
+}
+
+So you will end up with something like:
+
+many examples of s
+many examples of SS
+many examples of q
+many examples of k
+
+This is your retrieval database.
+
+Step 3: Extract embeddings for every phoneme segment
+
+Choose a speech model, for example:
+
+mHuBERT
+XLS-R
+wav2vec2
+
+For each phoneme segment:
+
+pass audio through encoder
+pool the frames for that segment
+save one vector embedding
+
+So now each stored phoneme example becomes:
+
+phoneme segment -> embedding vector
+
+You do this for:
+
+all database segments
+all test-time query segments
+Step 4: Align each test utterance to target phonemes
+
+For a test utterance:
+
+take the target phoneme sequence
+align it with the audio
+
+You can use:
+
+CTC forced alignment
+MFA if possible
+any phoneme aligner you trust
+
+This gives you:
+
+phoneme 1 -> frames 10 to 18
+phoneme 2 -> frames 19 to 27
+...
+
+Now each target phoneme has a corresponding audio chunk.
+
+Step 5: Turn each test phoneme chunk into a query
+
+For each aligned phoneme chunk in the test utterance:
+
+extract embedding from the encoder
+this becomes the query vector
+
+So now you have:
+
+expected phoneme = "SS"
+query embedding = vector from this audio chunk
+Step 6: Retrieve nearest correct examples
+
+Search the memory bank for the nearest embeddings.
+
+For each query:
+
+find top-k nearest phoneme examples
+use cosine similarity or FAISS nearest neighbor
+
+Example:
+
+query expected = SS
+
+top neighbors:
+1. SS  score 0.91
+2. SS  score 0.89
+3. s   score 0.82
+4. SS  score 0.80
+5. s   score 0.79
+Step 7: Decide correct or wrong
+
+Use a simple rule first.
+
+Rule:
+
+If most top neighbors are the expected phoneme, mark it correct.
+If not, mark it wrong.
+
+Example:
+
+expected = SS
+retrieved mostly SS -> correct
+retrieved mostly s -> wrong
+
+You can start with:
+
+correct if:
+    majority_label == expected_phoneme
+    and avg_similarity_to_expected >= threshold
+else:
+    wrong
+Step 8: Diagnose the wrong phoneme
+
+If wrong:
+
+look at the dominant non-target label among neighbors
+output that as the diagnosed realized phoneme
+
+Example:
+
+expected = SS
+neighbors mostly = s
+-> diagnose substitution SS -> s
+
+This gives you not just detection, but diagnosis too.
+
+Minimal version you can implement first
+
+If you want the easiest prototype, do only this:
+
+Training / database side
+choose correct training data
+align audio with phonemes
+cut phoneme segments
+extract embedding for each segment
+save all embeddings by phoneme label
+Test side
+align test audio with target phonemes
+cut each target phoneme segment
+extract embedding
+retrieve nearest neighbors
+majority vote for correct/wrong
+dominant wrong label = diagnosis
+
+That alone is already a working retrieval-based MDD system.
+
+What you need concretely
+Required files
+IqraEval dataset
+canonical phoneme sequence per row
+speech encoder checkpoint
+alignment tool
+Required outputs
+
+For each phoneme instance:
+
+{
+  "expected_phoneme": "SS",
+  "predicted_status": "wrong",
+  "diagnosed_as": "s",
+  "retrieval_score": 0.82
+}
+Best practical implementation order
+Phase 1: simplest prototype
+use mHuBERT embeddings
+use existing alignment
+use cosine similarity
+use majority vote
+Phase 2: better version
+add FAISS for fast retrieval
+add phoneme-specific thresholds
+add confidence score
+add phonological grouping
+Phase 3: stronger paper version
+add contrastive fine-tuning
+add phonology-aware reranking
+add calibration
+Very important design choice
+
+Use the retrieval database from correct pronunciations only.
+
+Do not mix wrong pronunciations into the main memory bank at first.
+
+Why:
+
+database should represent the canonical target space
+then test audio is judged by distance from that space
+Simple decision formula
+
+For each phoneme segment:
+
+retrieve top-k neighbors
+count how many have the expected label
+compute mean similarity to expected-label neighbors
+if both are high -> correct
+otherwise -> wrong
+
+That’s enough for version 1.
+
+Example
+
+Suppose target verse phoneme contains:
+
+... SS ...
+
+Speaker says something closer to s.
+
+After retrieval:
+
+neighbors = [s, s, SS, s, s]
+
+Then:
+
+expected = SS
+majority = s
+decision = wrong
+diagnosis = SS -> s
+If you want the simplest possible research claim
+
+You can frame it like this:
+
+We replace direct phoneme classification with retrieval against a memory of canonical phoneme pronunciations, enabling interpretable phoneme-level mispronunciation detection.
+
+Recommended first experiment
+
+Start with only these phoneme confusions:
+
+s vs SS
+t vs TT
+d vs DD
+q vs k
+
+These are meaningful in Arabic and easier to analyze.
+
+Once that works, expand to the full phoneme set.
+
+My honest recommendation
+
+Your first build should be:
+
+mHuBERT encoder
+CTC forced alignment
+cosine retrieval
+top-5 majority vote
+per-phoneme threshold on dev set
+
+That is simple, strong, and paper-worthy.
+
+I can next give you:
+(1) folder structure,
+or (2) pseudocode for the whole pipeline.
